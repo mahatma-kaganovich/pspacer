@@ -249,7 +249,7 @@ struct psp_class {
 
 	struct Qdisc *qdisc;	/* leaf qdisc */
 
-	struct tcf_proto *filter_list;	/* filter list */
+	struct tcf_proto __v__rcu *filter_list;	/* filter list */
 	int filter_cnt;		/* filter count */
 	u32 hw_gap;		/* inter frame gap + preamble + FCS */
 	u32 hz;			/* destination device timer frequence */
@@ -325,7 +325,7 @@ struct psp_sched_data {
 	struct sk_buff_head requeue;	/* requeued packet */
 	long direct_pkts;
 
-	struct tcf_proto *filter_list;	/* filter list */
+	struct tcf_proto __v__rcu *filter_list;	/* filter list */
 	int filter_cnt;		/* filter count */
 
 	u32 ifg;		/* inter frame gap */
@@ -736,8 +736,16 @@ static struct psp_class *psp_classify(struct sk_buff *skb, struct Qdisc *sch,
 			return PSP_DIRECT;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
 	tcf = q->filter_list;
+#else
+	tcf = rcu_dereference_bh(q->filter_list);
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,3,0)
 	while (tcf && (result = tc_classify(skb, tcf, &res)) >= 0) {
+#else
+	while (tcf && (result = tc_classify(skb, tcf, &res, false)) >= 0) {
+#endif
 #ifdef CONFIG_NET_CLS_ACT
 		switch (result) {
 		case TC_ACT_QUEUED:
@@ -778,7 +786,11 @@ static struct psp_class *psp_classify(struct sk_buff *skb, struct Qdisc *sch,
 		pcl = cl;
 
 		/* apply inner filter chain */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
 		tcf = cl->filter_list;
+#else
+		tcf = rcu_dereference_bh(cl->filter_list);
+#endif
 	}
 
 	/* classification failed, try default class */
@@ -2015,7 +2027,11 @@ static inline int retrans_check(struct sk_buff *skb, struct psp_class *cl,
 				if (res)	/* packet alredy slowed */
 					goto continue_connection;
 #endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
 				QSTATS(cl).overlimits += len;
+#else
+				/* todo like qdisc_qstats_overlimit(sch); */
+#endif
 				res = 1;
 
 				early = h->clock;
@@ -2843,8 +2859,12 @@ static int psp_dump_class(struct Qdisc *sch, unsigned long arg,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10)
 	NLA_PUT(skb, TCA_STATS, sizeof(cl->stats), &cl->stats);
 #endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
 	nla_nest_end(skb, nla);
 	return skb->len;
+#else
+	return nla_nest_end(skb, nla);
+#endif
 
       nla_put_failure:
 	nla_nest_cancel(skb, nla);
@@ -3172,11 +3192,11 @@ static void psp_walk(struct Qdisc *sch, struct qdisc_walker *arg)
 	}
 }
 
-static struct tcf_proto **psp_find_tcf(struct Qdisc *sch, unsigned long arg)
+static struct tcf_proto __v__rcu **psp_find_tcf(struct Qdisc *sch, unsigned long arg)
 {
 	struct psp_sched_data *q = qdisc_priv(sch);
 	struct psp_class *cl = (struct psp_class *)arg;
-	struct tcf_proto **fl = cl ? &cl->filter_list : &q->filter_list;
+	struct tcf_proto __v__rcu **fl = cl ? &cl->filter_list : &q->filter_list;
 
 	return fl;
 }

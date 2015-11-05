@@ -183,4 +183,12 @@ skb_set_timestamp(struct sk_buff *skb, const struct timeval *stamp)
 #define ETH_P_PAUSE 0x8808
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
+#define __v__rcu
+#define qdisc_qstats_drop(x) QSTATS(x).drops++
+#else
+#define __v__rcu __rcu
+#endif
+
+
 #endif /* __KERNEL__ */
