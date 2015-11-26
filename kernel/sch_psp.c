@@ -1014,14 +1014,24 @@ static void add_leaf_class(struct psp_sched_data *q, struct psp_class *cl)
  */
 
 #if 0
+
 #define _TIMER ({struct timeval now; do_gettimeofday(&now); now.tv_sec*(u64)USEC_PER_SEC+now.tv_usec; })
 #define _TIMER_HZ USEC_PER_SEC
+
 #elif 1
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
 #define _TIMER ktime_to_ns(ktime_get_real())
-#define _TIMER_HZ NSEC_PER_SEC
 #else
+#define _TIMER ktime_get_ns()
+#endif
+#define _TIMER_HZ NSEC_PER_SEC
+
+#else
+
 #define _TIMER jiffies
 #define _TIMER_HZ HZ
+
 #endif
 
 static inline unsigned long calc_rate_(struct est_data *e, clock_delta time,
@@ -2249,7 +2259,7 @@ static int psp_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 #else
 		if (err & __NET_XMIT_BYPASS)
 #endif
-			QSTATS(sch).drops++;
+			qdisc_qstats_drop(sch);
 		kfree_skb(skb);
 		return err;
 	} else {
@@ -2493,7 +2503,7 @@ static unsigned int psp_drop(struct Qdisc *sch)
 				list_move_tail(&cl->dlist, &q->drop_list);
 
 			QSTATS(cl).drops++;
-			QSTATS(sch).drops++;
+			qdisc_qstats_drop(sch);
 			return len;
 		}
 	}
@@ -2660,7 +2670,11 @@ static int psp_init(struct Qdisc *sch, struct nlattr *opt)
 	INIT_LIST_HEAD(&q->drop_list);
 	INIT_LIST_HEAD(&q->pacing_list);
 	INIT_LIST_HEAD(&q->normal_list);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
 	skb_queue_head_init(&q->requeue);
+#else
+	__skb_queue_head_init(&q->requeue);
+#endif
 
 	if (!psp_rand)
 		psp_rand = random32();
@@ -2876,10 +2890,14 @@ static int psp_dump_class_stats(struct Qdisc *sch, unsigned long arg,
 				struct gnet_dump *d)
 {
 	struct psp_class *cl = (struct psp_class *)arg;
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
+	__u32 qlen = 0;
+
+	if (!cl->level && cl->un.leaf.q)
+		qlen = cl->un.leaf.q->q.qlen;
+
 	if (gnet_stats_copy_basic(d, NULL, &cl->bstats) < 0 ||
-	    gnet_stats_copy_queue(d, NULL, &cl->qstats, cl->qdisc->q.qlen) < 0)
+	    gnet_stats_copy_queue(d, NULL, &cl->qstats, qlen) < 0)
 #else
 	if (gnet_stats_copy_basic(d, &cl->bstats) < 0 ||
 	    gnet_stats_copy_queue(d, &cl->qstats) < 0)
