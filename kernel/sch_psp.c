@@ -2893,8 +2893,9 @@ static int psp_dump_class_stats(struct Qdisc *sch, unsigned long arg,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
 	__u32 qlen = 0;
 
-	if (!cl->level && cl->un.leaf.q)
-		qlen = cl->un.leaf.q->q.qlen;
+/*	if (!cl->level && cl->qdisc) */
+	if (cl->qdisc)
+		qlen = cl->qdisc->q.qlen;
 
 	if (gnet_stats_copy_basic(d, NULL, &cl->bstats) < 0 ||
 	    gnet_stats_copy_queue(d, NULL, &cl->qstats, qlen) < 0)
