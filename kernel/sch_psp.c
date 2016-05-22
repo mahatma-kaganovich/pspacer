@@ -818,7 +818,8 @@ static inline int deq(struct Qdisc *sch, struct psp_sched_data *q,
 	if (cl) {
 		if (!(res = (QSTATS(cl).qlen -= qlen)))
 			psp_deactivate(q, cl);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
+/* to be simple, ignore 4.4.0-4.4.10, 4.5.0-4.5.4 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,11)
 		qdisc_tree_reduce_backlog(sch, qlen, QSTATS(sch).backlog);
 #else
 		qdisc_tree_decrease_qlen(sch, qlen);
@@ -2930,7 +2931,7 @@ static int psp_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
 
 	sch_tree_lock(sch);
 	*old = xchg(&cl->qdisc, new);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,11)
 	qdisc_tree_reduce_backlog(sch, (*old)->q.qlen, QSTATS((*old)).backlog);
 #else
 	qdisc_tree_decrease_qlen(sch, (*old)->q.qlen);
@@ -3165,7 +3166,7 @@ static int psp_delete(struct Qdisc *sch, unsigned long arg)
 	if (cl->level == 0)
 		qdisc_reset(cl->qdisc);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,11)
 	qdisc_tree_reduce_backlog(sch, QSTATS(cl).qlen, QSTATS(cl).backlog);
 #else
 	qdisc_tree_decrease_qlen(sch, QSTATS(cl).qlen);
